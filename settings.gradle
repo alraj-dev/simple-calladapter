@@ -1,0 +1,2 @@
+rootProject.name = "Simple Call Adapter"
+include ':simplecalladapter'
