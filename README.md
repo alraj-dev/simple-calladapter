@@ -48,9 +48,9 @@ fun getUser(): SimpleCall<List<User>>
 Use single function callback: **`SimpleCallback`**
 `SimpleCallback.onResult()`
 ```kotlin
-    getUser().enqueue { response, exception, call ->
-        // handle exception and response
-    }
+getUser().enqueue { response, exception, call ->
+	// handle exception and response
+}
 ```
 `SimpleCallback` gives 3 parameters:
 
@@ -83,8 +83,8 @@ val retrofit = Retrofit.Builder()
 
 You can also include or exclude the default conditions for individual calls
 ```kotlin
-    getUser().exclude(NULL_DATA).enqueue {}
-    getUser().include(NULL_DATA).enqueue {}
+getUser().exclude(NULL_DATA).enqueue {}
+getUser().include(NULL_DATA).enqueue {}
 ```
 
 MultipleCall:
