@@ -2,12 +2,14 @@ package dev.alraj.simplecalladapter
 
 import android.os.Handler
 import android.os.Looper
+import kotlinx.coroutines.runBlocking
 import okhttp3.Request
 import okio.Timeout
 import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
 import java.io.IOException
+import kotlin.jvm.Throws
 
 /**
  * A simple Retrofit2 Callback implementation which gives both response and exception in a single callback.
@@ -23,10 +25,6 @@ class SimpleCall<R>(
 
     private var tempDefaultConditions: MutableList<DefaultConditions> = defaultConditions?.toMutableList() ?: mutableListOf()
 
-    /**
-     * which type of request used before, [enqueue] or [execute]
-     */
-    private var whichCall = -1
     private var retry = false
     private lateinit var previousCallback: SimpleCallback<R>
     /**
@@ -49,26 +47,12 @@ class SimpleCall<R>(
 
     /**
      * Run this request Synchronously in the same thread. Uses [Call.execute]
-     * @param callback a [SimpleCallback] implementation which gives data and exception
+     * Doesn't support [DefaultConditions] for now. Works same as [Call.execute]
+     * @return The deserialized object
      */
-    fun execute(callback: SimpleCallback<R>) {
-        whichCall = EXECUTE
-        if(!retry) previousCallback = callback
-        // a wrapper lambda to run the user callback
-        val wrapperHandler: (R?, Throwable?) -> Unit = { body: R?, exception: Throwable? ->
-            // run the callback in main thread
-            callback.onResult(body, exception, this)
-        }
-
-        try {
-            // call and handle response
-            val response = call.execute()
-            handleResponse(response, wrapperHandler)
-
-        } catch (t: IOException) {
-            callback.onResult(null, t, this)
-        }
-        retry = false
+    @Throws(Throwable::class)
+    fun execute(): R? {
+        return call.execute().body()
     }
 
     /**
@@ -76,7 +60,6 @@ class SimpleCall<R>(
      * @param callback [SimpleCallback] implementation which gives data and exception
      */
     fun enqueue(callback: SimpleCallback<R>) {
-        whichCall = ENQUEUE
         if(!retry) previousCallback = callback
 
         // a wrapper lambda to run the user callback in main thread
@@ -171,13 +154,9 @@ class SimpleCall<R>(
      * @param callback new callback to use for retry, otherwise main callback will be used
      */
     fun retry(callback: SimpleCallback<R> = previousCallback) {
-        // there was a request before
-        if(whichCall != -1) {
-            if(isExecuted()) call = call.clone()
-            retry = true
-            if (whichCall == EXECUTE) execute(callback)
-            else enqueue(callback)
-        }
+        if(isExecuted()) call = call.clone()
+        retry = true
+        enqueue(callback)
     }
 
     fun isExecuted(): Boolean = call.isExecuted
@@ -187,9 +166,4 @@ class SimpleCall<R>(
     fun request(): Request = call.request()
 
     fun timeout(): Timeout = call.timeout()
-
-    private companion object {
-        const val EXECUTE = 1
-        const val ENQUEUE = 2
-    }
 }

@@ -18,36 +18,6 @@ class MultipleCall<R>(private var calls: List<SimpleCall<R>>) {
     private var retry = false
 
     /**
-     * Call all the [SimpleCall] synchronously
-     * @param callback [MultipleCallback] callback
-     */
-    fun execute(callback: MultipleCallback<R>) {
-        if(!retry) previousCallback = callback
-
-        val localCallback = SimpleCallback<R> { data, exception, call ->
-            val index = calls.indexOf(call)
-            results[index] = Result(data, exception, call)
-            countdown.countDown()
-        }
-
-        for (call in calls)
-            if(retry)
-                call.retry()
-            else
-                call.execute(localCallback)
-
-        countdown.await()
-        retry = false
-
-        callback.onResult(
-            results.map { it?.response },
-            results.map { it?.exception },
-            results.map { it?.call },
-            this@MultipleCall
-        )
-    }
-
-    /**
      * Call all the [SimpleCall] asynchronously
      * @param callback [MultipleCallback] callback
      */
