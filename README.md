@@ -18,7 +18,7 @@ allprojects {
 ```
 
 and in your module level `build.gradle`, add the dependency:
-Latest Version: **`1.0`**
+Latest Version: **`1.0.1`**
 
 ```groovy
 dependencies {
