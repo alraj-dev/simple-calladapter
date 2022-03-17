@@ -18,11 +18,11 @@ allprojects {
 ```
 
 and in your module level `build.gradle`, add the dependency:
-Latest Version: **`1.0.1`**
+Latest Version: **`1.1.0`**
 
 ```groovy
 dependencies {
-        implementation 'com.github.alraj-dev:simple-calladapter:1.0'
+        implementation 'com.github.alraj-dev:simple-calladapter:latest-version'
 }
 ```
 
@@ -78,14 +78,30 @@ val retrofit = Retrofit.Builder()
     .build()
 ```
 
-- NULL_DATA: when response is `null`, returns `NullDataException` in callback and `null` for response. (I think Response can never be null, meh!)
-- EMPTY LIST: when response is a `Collection`, `Map`, or `Array` and is empty, returns `EmptyListException` in callback and `null` for response.
+- NULL_DATA: when response data is `null`, returns `NullDataException` in callback and `null` for response data.
+- EMPTY LIST: when response data is a `Collection`, `Map`, or `Array` and is empty, returns `EmptyListException` in callback and `null` for response.
 
 You can also include or exclude the default conditions for individual calls
 ```kotlin
 getUser().exclude(NULL_DATA).enqueue {}
 getUser().include(NULL_DATA).enqueue {}
 ```
+
+lifecycle
+-
+
+```kotlin
+lifecycle(lifecycleOwner, lifecyleState, reportCancel)
+```
+Set lifecycleOwner to the call which cancels automatically when the state is reached, default is DESTROYED.
+Normally call.cancel() will give an IOException as a result, so decide whether to receive this cancel Exception.
+
+eg:
+```kotlin
+getUser().lifecycle(lifecycleOwner, LifecycleEvent.State.STOPPED).enqueue {}
+```
+
+The above call will be cancelled when the lifecycleOwner reaches the state Stopped.
 
 MultipleCall:
 -

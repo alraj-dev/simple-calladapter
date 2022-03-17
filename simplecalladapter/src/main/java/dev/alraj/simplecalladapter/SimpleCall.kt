@@ -1,15 +1,16 @@
 package dev.alraj.simplecalladapter
 
-import android.os.Handler
-import android.os.Looper
-import kotlinx.coroutines.runBlocking
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import okhttp3.Request
 import okio.Timeout
 import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
-import java.io.IOException
-import kotlin.jvm.Throws
 
 /**
  * A simple Retrofit2 Callback implementation which gives both response and exception in a single callback.
@@ -19,14 +20,20 @@ import kotlin.jvm.Throws
 class SimpleCall<R>(
     initialCall: Call<R>,
     defaultConditions: Array<DefaultConditions>?
-    ) {
+) {
     // using var for retry clone
     private var call = initialCall
 
-    private var tempDefaultConditions: MutableList<DefaultConditions> = defaultConditions?.toMutableList() ?: mutableListOf()
+    private var lifecycleOwner: LifecycleOwner? = null
+
+    private var tempDefaultConditions: MutableList<DefaultConditions> =
+        defaultConditions?.toMutableList() ?: mutableListOf()
 
     private var retry = false
     private lateinit var previousCallback: SimpleCallback<R>
+
+    private var reportCancel = false
+
     /**
      * exclude a default condition for this callback to make exception.
      * @param condition [DefaultConditions] to exclude
@@ -46,96 +53,132 @@ class SimpleCall<R>(
     }
 
     /**
+     * Cancel the network call when the lifecycle reaches the given cancelState
+     * @param owner LifecycleOwner of activity, fragment, view, etc
+     * @param state State in which to cancel the call, default is Destroyed
+     * @param report Whether to report lifecycleScope cancel like normal cancel with IOException, default is false
+     */
+    fun lifecycle(
+        owner: LifecycleOwner,
+        state: Lifecycle.State = Lifecycle.State.DESTROYED,
+        report: Boolean = false
+    ): SimpleCall<R> {
+        reportCancel = report
+        lifecycleOwner = owner
+        lifecycleOwner?.lifecycle?.addObserver(object : LifecycleEventObserver {
+            override fun onStateChanged(source: LifecycleOwner, event: Lifecycle.Event) {
+                if (event.targetState == state) {
+                    // cancel call when lifecycle owner reaches cancelState
+                    call.cancel()
+
+                    // remove the observer, no longer need it
+                    source.lifecycle.removeObserver(this)
+                }
+            }
+        })
+        return this
+    }
+
+    /**
      * Run this request Synchronously in the same thread. Uses [Call.execute]
-     * Doesn't support [DefaultConditions] for now. Works same as [Call.execute]
      * @return The deserialized object
      */
     @Throws(Throwable::class)
     fun execute(): R? {
-        return call.execute().body()
+        val pair = handleBody(call.execute())
+        throw pair.second ?: return pair.first
     }
 
     /**
      * Run this request Asynchronously in the background thread. Uses [Call.enqueue]
+     * Return to the callback in the same thread called it.
      * @param callback [SimpleCallback] implementation which gives data and exception
      */
     fun enqueue(callback: SimpleCallback<R>) {
-        if(!retry) previousCallback = callback
+        reportCancel = false
+        if (!retry) previousCallback = callback
 
         // a wrapper lambda to run the user callback in main thread
         val wrapperHandler: (R?, Throwable?) -> Unit = { body: R?, exception: Throwable? ->
             // run the callback in main thread
-            Handler(Looper.getMainLooper()).post {
-                callback.onResult(body, exception, this)
+            CoroutineScope(Dispatchers.Main).launch {
+                // If call is canceled and should not be reported with onFailure, do nothing
+                if (call.isCanceled && !reportCancel) return@launch
+                callback.onResult(body, exception, this@SimpleCall)
             }
         }
 
-        // retrofit callback
         call.enqueue(object : Callback<R> {
             override fun onResponse(call: Call<R>?, r: Response<R>) {
-                handleResponse(r, wrapperHandler)
+                val pair = handleResponse(r)
+                wrapperHandler(pair.first, pair.second)
             }
 
             override fun onFailure(call: Call<R>?, t: Throwable) {
-                handleException(t, wrapperHandler)
+                val pair = handleException(t)
+                wrapperHandler(pair.first, pair.second)
             }
         })
         retry = false
     }
 
-    private fun handleResponse(response: Response<R>, responseHandler: (R?, Throwable?) -> Unit) {
+    private fun handleResponse(response: Response<R>): Pair<R?, Throwable?> {
         // if request is success, the response will have a body
-        if (response.isSuccessful) {
-            handleBody(response, responseHandler)
+        return if (response.isSuccessful) {
+            handleBody(response)
         }
         // otherwise handle failure state
         else {
-            handleFailure(response, responseHandler)
+            handleFailure(response)
         }
     }
 
-    private fun handleBody(response: Response<R>, responseHandler: (R?, Throwable?) -> Unit) {
+    private fun handleBody(response: Response<R>): Pair<R?, Throwable?> {
         // Response body is not null
-        if (response.body() != null) {
-            handleData(response, responseHandler)
+        return if (response.body() != null) {
+            handleData(response)
         }
         // Response body is null and Flagged to transfer to FailureCall
         else if (DefaultConditions.NULL_RESPONSE in tempDefaultConditions) {
-            responseHandler(
+            Pair(
                 null,
                 NullDataException("Null body in client response, ${response.raw()}")
             )
         }
         // Response body is null, still give it to user
         else {
-            responseHandler(null, null)
+            Pair(null, null)
         }
     }
 
-    private fun handleData(response: Response<R>, responseHandler: (R?, Throwable?) -> Unit) {
+    private fun handleData(response: Response<R>): Pair<R?, Throwable?> {
         // Response body is empty and flagged
-        if (isEmpty(response) && DefaultConditions.EMPTY_LIST in tempDefaultConditions) {
-            responseHandler(null, EmptyListException("Response body is an empty collection ${response.raw()}"))
+        return if (isEmpty(response) && DefaultConditions.EMPTY_LIST in tempDefaultConditions) {
+            Pair(
+                null,
+                EmptyListException("Response body is an empty collection ${response.raw()}")
+            )
         }
         // Response body is a class data or non empty or empty and not flagged
         else {
-            responseHandler(response.body(), null)
+            Pair(response.body(), null)
         }
     }
 
     private fun isEmpty(response: Response<R>): Boolean {
-        val isEmptyCollection = (response.body() is Collection<*> && (response.body() as Collection<*>).isEmpty())
+        val isEmptyCollection =
+            (response.body() is Collection<*> && (response.body() as Collection<*>).isEmpty())
         val isEmptyArray = (response.body() is Array<*> && (response.body() as Array<*>).isEmpty())
         val isEmptyMap = (response.body() is Map<*, *> && (response.body() as Map<*, *>).isEmpty())
         return (isEmptyCollection || isEmptyArray || isEmptyMap)
     }
 
-    private fun handleException(throwable: Throwable, responseHandler: (R?, Throwable?) -> Unit) {
-        responseHandler(null, throwable)
+    private fun handleFailure(response: Response<R>): Pair<R?, Throwable?> {
+        return Pair(null, FailedResponseException("Request failed ${response.raw()}"))
     }
 
-    private fun handleFailure(response: Response<R>, responseHandler: (R?, Throwable?) -> Unit) {
-        responseHandler(null, FailedResponseException("Request failed ${response.raw()}"))
+    private fun handleException(throwable: Throwable): Pair<R?, Throwable?> {
+        return Pair(null, throwable)
     }
 
     /**
@@ -143,6 +186,7 @@ class SimpleCall<R>(
      * Uses [Call.cancel]
      */
     fun cancel() {
+        reportCancel = true
         call.cancel()
     }
 
@@ -154,7 +198,7 @@ class SimpleCall<R>(
      * @param callback new callback to use for retry, otherwise main callback will be used
      */
     fun retry(callback: SimpleCallback<R> = previousCallback) {
-        if(isExecuted()) call = call.clone()
+        if (isExecuted()) call = call.clone()
         retry = true
         enqueue(callback)
     }
@@ -166,4 +210,6 @@ class SimpleCall<R>(
     fun request(): Request = call.request()
 
     fun timeout(): Timeout = call.timeout()
+
+    private val thread: Thread = Thread.currentThread()
 }

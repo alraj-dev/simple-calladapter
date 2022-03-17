@@ -1,0 +1,3 @@
+v1.1.0:
+* support Default Conditions in execute() call too
+* support automatic cancellation with lifecycleOwner
