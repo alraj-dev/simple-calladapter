@@ -4,8 +4,8 @@ import retrofit2.Response
 /**
  * When [Response] is not successful [Response.isSuccessful].
  */
-class FailedResponseException(message: String) : Exception(message) {
-    constructor() : this("Retrofit response is not successful")
+class FailedResponseException(code: Int, message: String) : Exception(message) {
+    constructor(code: Int) : this(code, "Retrofit response is not successful with code $code")
 }
 
 /**

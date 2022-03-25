@@ -174,7 +174,7 @@ class SimpleCall<R>(
     }
 
     private fun handleFailure(response: Response<R>): Pair<R?, Throwable?> {
-        return Pair(null, FailedResponseException("Request failed ${response.raw()}"))
+        return Pair(null, FailedResponseException(response.code(), "Request failed ${response.raw()}"))
     }
 
     private fun handleException(throwable: Throwable): Pair<R?, Throwable?> {

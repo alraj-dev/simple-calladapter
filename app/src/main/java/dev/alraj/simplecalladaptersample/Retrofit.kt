@@ -24,7 +24,7 @@ object RetrofitFactory {
     val retrofitService: RetrofitService by lazy {
         Retrofit.Builder()
             .client(okHttpClient)
-            .baseUrl("https://1496a36c-19e3-4240-836b-ae563c065b6b.mock.pstmn.io/")
+            .baseUrl("http://192.168.119.185:3000/")
             .addConverterFactory(GsonConverterFactory.create())
             .addCallAdapterFactory(
                 SimpleCallAdapterFactory.create(
@@ -37,9 +37,18 @@ object RetrofitFactory {
 }
 
 interface RetrofitService {
-    @GET("success")
-    fun getSuccess(): SimpleCall<Hello>
+    @GET("user")
+    fun user(): SimpleCall<UserResponse>
+
+    @GET("users")
+    fun users(): SimpleCall<Base<List<User>>>
+
+    @GET("cat")
+    fun cat(): SimpleCall<Base<Cat>>
+
+    @GET("software")
+    fun software(): SimpleCall<Base<Software>>
 
     @GET("success")
-    suspend fun getSuccessSuspend(): Hello
+    fun success(): SimpleCall<Base<String>>
 }

@@ -23,10 +23,10 @@ class Fragment1 : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        RetrofitFactory.retrofitService.getSuccess()
+        RetrofitFactory.retrofitService.success()
             .lifecycle(viewLifecycleOwner)
             .enqueue { response, exception, _ ->
-            view.findViewById<TextView>(R.id.ftext).text = response?.result
+            view.findViewById<TextView>(R.id.ftext).text = response?.data
                 ?: exception?.let { it::class.simpleName }
                         ?: "nothing"
         }
